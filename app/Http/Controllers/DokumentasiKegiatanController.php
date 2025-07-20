@@ -28,6 +28,7 @@ class DokumentasiKegiatanController extends Controller
         return Inertia::render('Dokumentasi/CreateForm', [
             'kegiatans' => KegiatanResource::collection($kegiatans),
             'selectedKegiatanId' => $request->query('kegiatan_id'), // Mengambil ID dari URL
+            'tipe' => $request->query('tipe', 'observasi'),
         ]);
     }
 
@@ -40,10 +41,13 @@ class DokumentasiKegiatanController extends Controller
     {
         $data = $request->validated();
 
+        $tipe = $request->input('tipe', 'observasi');
+
         $dokumentasiKegiatan = DokumentasiKegiatan::create([
             'kegiatan_id' => $data['kegiatan_id'],
             'nama_dokumentasi' => $data['nama_dokumentasi'],
             'deskripsi' => $data['deskripsi'] ?? null,
+            'tipe' => $tipe,
         ]);
 
         if (isset($data['fotos'])) {
@@ -58,10 +62,12 @@ class DokumentasiKegiatanController extends Controller
             }
         }
 
+         $activeTab = ($tipe === 'penyerahan') ? 'dokumentasi_penyerahan' : 'dokumentasi_observasi';
+
         // Redirect ke 'kegiatan.myIndex' dengan data tab yang harus aktif
         return to_route('kegiatan.myIndex')
             ->with('success', 'Dokumentasi kegiatan berhasil disimpan.')
-            ->with('active_tab', 'dokumentasi_observasi'); 
+            ->with('active_tab', $activeTab); 
     }
 
     /**
