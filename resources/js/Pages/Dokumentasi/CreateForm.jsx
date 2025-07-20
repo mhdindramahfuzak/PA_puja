@@ -7,15 +7,17 @@ import TextAreaInput from '@/Components/TextAreaInput';
 import SelectInput from '@/Components/SelectInput';
 
 // =====================================================================
-// === PERUBAHAN: Terima props 'selectedKegiatanId' dari controller  ===
+// === PERBAIKAN: Tambahkan 'tipe' ke dalam props yang diterima      ===
 // =====================================================================
-export default function CreateForm({ auth, kegiatans, selectedKegiatanId }) {
+export default function CreateForm({ auth, kegiatans, selectedKegiatanId, tipe }) {
     const { data, setData, post, errors, processing } = useForm({
         nama_dokumentasi: '',
         // Set nilai awal dropdown dengan ID yang diterima
         kegiatan_id: selectedKegiatanId || '',
         deskripsi: '',
-        fotos: [], 
+        fotos: [],
+        // Sekarang 'tipe' sudah terdefinisi dari props
+        tipe: tipe || 'observasi',
     });
 
     // Fungsi untuk menangani perubahan pada input file
@@ -27,9 +29,7 @@ export default function CreateForm({ auth, kegiatans, selectedKegiatanId }) {
 
     const onSubmit = (e) => {
         e.preventDefault();
-        // =====================================================================
-        // === PERBAIKAN: Gunakan nama rute yang benar ('store' bukan 'storeForm') ===
-        // =====================================================================
+        // Mengirim data form ke rute 'dokumentasi-kegiatan.store'
         post(route('dokumentasi-kegiatan.store'), {
             forceFormData: true,
         });
@@ -85,7 +85,7 @@ export default function CreateForm({ auth, kegiatans, selectedKegiatanId }) {
                                 </SelectInput>
                                 <InputError message={errors.kegiatan_id} className="mt-2" />
                             </div>
-                            
+
                             {/* Input Gambar (Multiple) */}
                             {[...Array(4)].map((_, index) => (
                                 <div className="mt-4" key={index}>

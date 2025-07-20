@@ -1,59 +1,98 @@
-// resources/js/Pages/Kegiatan/Partials/KegiatanTableRow.jsx
-
 import { Link } from '@inertiajs/react';
 
-// Komponen ActionButtons bisa dipindahkan ke filenya sendiri juga jika mau
-const ActionButtons = ({ type, dokumentasi, kegiatan }) => {
-    if (type === 'dokumentasi') {
-        if (dokumentasi) {
-            return <Link href={route('dokumentasi-kegiatan.show', dokumentasi.id)} className="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 text-xs">Lihat</Link>;
-        }
-        return <Link href={route('dokumentasi-kegiatan.create', { 'kegiatan_id': kegiatan.id })} className="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 text-xs">Input</Link>;
-    }
-    if (type === 'kebutuhan') {
-        if (!dokumentasi) {
-            return <span className="text-gray-400 text-xs italic">Buat Dok. Dahulu</span>;
-        }
-        const kebutuhan = dokumentasi.kebutuhans?.[0];
-        if (kebutuhan) {
-            return <Link href={route('kebutuhan.show', kebutuhan.id)} className="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 text-xs">Lihat</Link>;
-        }
-        return <Link href={route('kebutuhan.create', { 'dokumentasi_kegiatan_id': dokumentasi.id })} className="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 text-xs">Input</Link>;
-    }
-    return null;
-};
-
 export default function KegiatanTableRow({ kegiatan, index, activeTab, onKonfirmasi }) {
-    const dokumentasi = kegiatan.dokumentasiKegiatans?.[0];
 
-    // Menggunakan return di awal untuk setiap case agar lebih bersih
+    // TAB: Melakukan Perjalanan Dinas Observasi
     if (activeTab === 'perjalanan_dinas') {
         return (
-            <tr className="bg-white border-b">
+            <tr className="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
                 <td className="px-4 py-2">{index + 1}</td>
-                <td className="px-4 py-2">{kegiatan.nama_kegiatan}</td>
-                <td className="px-4 py-2">
-                    <Link href={route('proposal.show', kegiatan.proposal.id)} className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600 text-xs">Lihat</Link>
-                </td>
+                <td className="px-4 py-2 font-medium text-gray-900 whitespace-nowrap dark:text-white">{kegiatan.nama_kegiatan}</td>
                 <td className="px-4 py-2">{kegiatan.tanggal_kegiatan}</td>
-                <td className="px-4 py-2 text-center">
+                <td className="px-4 py-2">
+                    <a href={kegiatan.sktl_path} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Lihat SKTL</a>
+                </td>
+                <td className="px-4 py-2">
                     <button onClick={() => onKonfirmasi(kegiatan)} className="bg-cyan-500 text-white px-3 py-1 rounded hover:bg-cyan-600 text-xs">Konfirmasi</button>
                 </td>
             </tr>
         );
     }
 
+    // TAB: Melakukan Dokumentasi Observasi
     if (activeTab === 'dokumentasi_observasi') {
+        const dokObservasi = kegiatan.dokumentasiKegiatans.find(d => d.tipe === 'observasi');
         return (
-            <tr className="bg-white border-b">
+            <tr className="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
                 <td className="px-4 py-2">{index + 1}</td>
-                <td className="px-4 py-2">{kegiatan.nama_kegiatan}</td>
+                <td className="px-4 py-2 font-medium text-gray-900 whitespace-nowrap dark:text-white">{kegiatan.nama_kegiatan}</td>
                 <td className="px-4 py-2">{kegiatan.tanggal_kegiatan}</td>
-                <td className="px-4 py-2"><ActionButtons type="kebutuhan" dokumentasi={dokumentasi} kegiatan={kegiatan} /></td>
-                <td className="px-4 py-2"><ActionButtons type="dokumentasi" dokumentasi={dokumentasi} kegiatan={kegiatan} /></td>
                 <td className="px-4 py-2">
-                    {/* === PERBAIKAN UTAMA DI SINI === */}
-                    <Link href={route('kegiatan.detail', kegiatan.id)} className="bg-purple-500 text-white px-2 py-1 rounded hover:bg-purple-600 text-xs">Detail</Link>
+                    <Link href={route('kebutuhan.create', { 'kegiatan_id': kegiatan.id })} className="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 text-xs">Buat Dulu</Link>
+                </td>
+                <td className="px-4 py-2">
+                    {dokObservasi ? (
+                        <Link href={route('dokumentasi-kegiatan.show', dokObservasi.id)} className="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 text-xs">Lihat</Link>
+                    ) : (
+                        <Link href={route('dokumentasi-kegiatan.create', { 'kegiatan_id': kegiatan.id, 'tipe': 'observasi' })} className="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 text-xs">Input</Link>
+                    )}
+                </td>
+                <td className="px-4 py-2">
+                    <Link href={route('kegiatan.detail', kegiatan.id)} className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600 text-xs">Detail</Link>
+                </td>
+                <td className="px-4 py-2">
+                    <button onClick={() => onKonfirmasi(kegiatan)} className="bg-cyan-500 text-white px-3 py-1 rounded hover:bg-cyan-600 text-xs">Konfirmasi</button>
+                </td>
+            </tr>
+        );
+    }
+
+    // TAB: Melakukan Dokumentasi Penyerahan
+    if (activeTab === 'dokumentasi_penyerahan') {
+        const dokPenyerahan = kegiatan.dokumentasiKegiatans.find(d => d.tipe === 'penyerahan');
+        const kontrakPenyerahan = dokPenyerahan?.kontraks?.[0];
+
+        return (
+            <tr className="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
+                <td className="px-4 py-2">{index + 1}</td>
+                <td className="px-4 py-2 font-medium text-gray-900 whitespace-nowrap dark:text-white">{kegiatan.nama_kegiatan}</td>
+                <td className="px-4 py-2">{kegiatan.tanggal_penyerahan}</td>
+                <td className="px-4 py-2">
+                    {kegiatan.sktl_penyerahan_path ? (
+                        <a href={kegiatan.sktl_penyerahan_path} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">Lihat File</a>
+                    ) : (
+                        'N/A'
+                    )}
+                </td>
+                <td className="px-4 py-2">
+                    {!dokPenyerahan ? (
+                        <span className="text-gray-400 text-xs italic">Input Dok. dulu</span>
+                    ) : kontrakPenyerahan ? (
+                        <a href={kontrakPenyerahan.file_path} target="_blank" rel="noopener noreferrer" className="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 text-xs">
+                            Lihat
+                        </a>
+                    ) : (
+                        <Link
+                            href={route('kontrak.create', { 'kegiatan_id': kegiatan.id })}
+                            className="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 text-xs">
+                            Input
+                        </Link>
+                    )}
+                </td>
+                <td className="px-4 py-2">
+                    {dokPenyerahan ? (
+                        <Link 
+                            href={route('dokumentasi-kegiatan.show', dokPenyerahan.id)} 
+                            className="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 text-xs">
+                            Lihat
+                        </Link>
+                    ) : (
+                        <Link 
+                            href={route('dokumentasi-kegiatan.create', { 'kegiatan_id': kegiatan.id, 'tipe': 'penyerahan' })} 
+                            className="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 text-xs">
+                            Input
+                        </Link>
+                    )}
                 </td>
                 <td className="px-4 py-2 text-center">
                     <button onClick={() => onKonfirmasi(kegiatan)} className="bg-cyan-500 text-white px-3 py-1 rounded hover:bg-cyan-600 text-xs">Konfirmasi</button>
@@ -62,31 +101,21 @@ export default function KegiatanTableRow({ kegiatan, index, activeTab, onKonfirm
         );
     }
 
-    if (activeTab === 'dokumentasi_penyerahan') {
-        return (
-            <tr className="bg-white border-b">
-                {/* ... konten untuk tab ini ... */}
-            </tr>
-        );
-    }
-
+    // TAB: Selesai
     if (activeTab === 'selesai') {
         return (
-            <tr className="bg-white border-b">
+            <tr className="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
                 <td className="px-4 py-2">{index + 1}</td>
-                <td className="px-4 py-2">{kegiatan.nama_kegiatan}</td>
-                <td className="px-4 py-2">{kegiatan.berita_acaras?.[0]?.nama_berita_acara || 'N/A'}</td>
+                <td className="px-4 py-2 font-medium text-gray-900 whitespace-nowrap dark:text-white">{kegiatan.nama_kegiatan}</td>
                 <td className="px-4 py-2">{kegiatan.tanggal_kegiatan}</td>
-                <td className="px-4 py-2">{dokumentasi?.nama_dokumentasi || 'N/A'}</td>
+                <td className="px-4 py-2 text-green-600 font-bold">Selesai</td>
                 <td className="px-4 py-2">
-                    <Link href={route('kegiatan.detail', kegiatan.id)} className="bg-purple-500 text-white px-2 py-1 rounded hover:bg-purple-600 text-xs">Detail</Link>
-                </td>
-                <td className="px-4 py-2 text-center">
-                    <span className="bg-gray-400 text-white px-3 py-1 rounded cursor-not-allowed text-xs">Selesai</span>
+                    <Link href={route('kegiatan.show', kegiatan.id)} className="text-blue-600 hover:underline">Lihat Detail</Link>
                 </td>
             </tr>
         );
     }
 
-    return null; // Fallback jika tidak ada tab yang cocok
+    // Jika tidak ada tab yang cocok, jangan render apa-apa
+    return null;
 }
