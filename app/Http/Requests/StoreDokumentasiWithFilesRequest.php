@@ -47,6 +47,7 @@ class StoreDokumentasiWithFilesRequest extends FormRequest
             'fotos.*.image' => 'File yang diupload harus berupa gambar.',
             'fotos.*.mimes' => 'Format gambar yang didukung: JPEG, PNG, JPG, GIF.',
             'fotos.*.max' => 'Ukuran file maksimal 5MB.',
+            'tipe' => 'nullable|string|in:observasi,penyerahan', 
         ];
     }
 }

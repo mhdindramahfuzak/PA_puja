@@ -23,7 +23,8 @@ class StoreKontrakRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'dokumentasi_kegiatan_id' => 'required|exists:dokumentasi_kegiatans,id',
+            // Ganti validasi dari dokumentasi_kegiatan_id ke kegiatan_id
+            'kegiatan_id' => 'required|exists:kegiatans,id',
             'nama_kontrak' => 'required|string|max:255',
             'file_path' => 'required|file|mimes:pdf,doc,docx|max:2048',
         ];

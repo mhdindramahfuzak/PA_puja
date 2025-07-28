@@ -16,6 +16,8 @@ class KegiatanResource extends JsonResource
             'ket_kegiatan' => $this->ket_kegiatan,
             'tanggal_kegiatan' => (new \DateTime($this->tanggal_kegiatan))->format('Y-m-d'),
             'tahapan' => $this->tahapan, // <-- TAMBAHKAN INI
+            'tanggal_penyerahan' => $this->tanggal_penyerahan ? (new \DateTime($this->tanggal_penyerahan))->format('Y-m-d') : null,
+            'sktl_penyerahan_path' => $this->sktl_penyerahan_path ? Storage::url($this->sktl_penyerahan_path) : null,
             'sktl_path' => $this->sktl_path ? Storage::url($this->sktl_path) : null,
             'created_at' => (new \DateTime($this->created_at))->format('d-m-Y'),
             'proposal' => new ProposalResource($this->whenLoaded('proposal')),

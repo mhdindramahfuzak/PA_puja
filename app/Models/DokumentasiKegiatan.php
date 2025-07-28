@@ -18,7 +18,7 @@ class DokumentasiKegiatan extends Model
     public function kegiatan()
     {
         return $this->belongsTo(Kegiatan::class);
-    }
+    }   
 
     /**
      * Mendefinisikan relasi "hasMany" ke model Foto.

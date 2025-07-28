@@ -19,6 +19,7 @@ class DokumentasiKegiatanResource extends JsonResource
             'kegiatan_id' => $this->kegiatan_id,
             'nama_dokumentasi' => $this->nama_dokumentasi,
             'deskripsi' => $this->deskripsi,
+            'tipe' => $this->tipe,
             'created_at' => (new \DateTime($this->created_at))->format('d-m-Y'),
             
             // Memuat relasi ke kegiatan induknya

@@ -2,273 +2,232 @@
 
 namespace App\Http\Controllers;
 
-// (BARU) Mengimpor Enum untuk tahapan yang lebih aman
 use App\Enums\TahapanKegiatan;
-use App\Http\Requests\StoreKegiatanRequest;
-use App\Http\Requests\UpdateKegiatanRequest;
 use App\Http\Resources\KegiatanResource;
 use App\Http\Resources\ProposalResource;
 use App\Http\Resources\TimResource;
 use App\Models\Kegiatan;
+use App\Http\Requests\StoreKegiatanRequest;
+use App\Http\Requests\UpdateKegiatanRequest;
 use App\Models\Proposal;
 use App\Models\Tim;
 use Illuminate\Http\Request;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rules\Enum;
 use Inertia\Inertia;
-use Inertia\Response;
-
-/**
- * @mixin \Illuminate\Foundation\Auth\Access\AuthorizesRequests
- */
 
 class KegiatanController extends Controller
 {
     /**
-     * (BARU) Menerapkan otorisasi untuk semua metode resource secara otomatis.
-     * Ini lebih aman daripada cek manual yang dikomentari.
-     * Jalankan: php artisan make:policy KegiatanPolicy --model=Kegiatan
+     * Display a listing of the resource.
      */
-
-    
-    public function __construct()
+    public function index()
     {
-        $this->authorizeResource(Kegiatan::class, 'kegiatan');
-    }
+        $query = Kegiatan::query()->with(['proposal', 'tim', 'createdBy']);
 
-    /**
-     * Menampilkan daftar semua kegiatan.
-     */
-    public function index(): Response
-    {
-        $kegiatans = Kegiatan::query()
-            ->with(['proposal', 'tim', 'createdBy'])
-            ->latest()
-            ->paginate(10);
+        $sortField = request("sort_field", 'created_at');
+        $sortDirection = request("sort_direction", "desc");
+
+        if (request("nama_kegiatan")) {
+            $query->where("nama_kegiatan", "like", "%" . request("nama_kegiatan") . "%");
+        }
+        if (request("status")) {
+            $query->where("status", request("status"));
+        }
+
+        $kegiatans = $query->orderBy($sortField, $sortDirection)
+            ->paginate(10)
+            ->onEachSide(1);
 
         return Inertia::render('Kegiatan/Index', [
             'kegiatans' => KegiatanResource::collection($kegiatans),
+            'queryParams' => request()->query() ?: null,
+            'success' => session('success'),
         ]);
     }
 
     /**
-     * Menampilkan form untuk membuat kegiatan baru.
+     * Display a listing of the resource for the current user.
      */
-    public function create(): Response
+    public function myIndex()
     {
-        // (DIPERBAIKI) Memanggil helper untuk menghindari duplikasi kode
-        return Inertia::render('Kegiatan/Create', $this->getFormData());
+        $user = Auth::user();
+        $query = Kegiatan::whereHas('tim.users', function ($query) use ($user) {
+            $query->where('users.id', $user->id);
+        })->with(['proposal', 'tim', 'createdBy', 'dokumentasiKegiatans.fotos', 'dokumentasiKegiatans.kebutuhans', 'dokumentasiKegiatans.kontraks', 'beritaAcaras']);
+        
+        $kegiatans = $query->orderBy('created_at', 'desc')->get();
+
+        return Inertia::render('Kegiatan/MyIndex', [
+            'kegiatans' => KegiatanResource::collection($kegiatans),
+            'success' => session('success'),
+            'active_tab' => session('active_tab', 'perjalanan_dinas'),
+        ]);
     }
 
     /**
-     * Menyimpan kegiatan baru ke database.
+     * Show the form for creating a new resource.
+     */
+    public function create()
+    {
+        $proposals = Proposal::query()->orderBy('nama_proposal', 'asc')->get();
+        $tims = Tim::query()->orderBy('nama_tim', 'asc')->get();
+        return Inertia::render('Kegiatan/Create', [
+            'proposals' => ProposalResource::collection($proposals),
+            'tims' => TimResource::collection($tims),
+        ]);
+    }
+
+    /**
+     * Store a newly created resource in storage.
      */
     public function store(StoreKegiatanRequest $request)
     {
         $data = $request->validated();
-        $data['created_by'] = Auth::id();
-
-        if ($request->hasFile('sktl_path')) {
-            $data['sktl_path'] = $this->handleFileUpload(
-                $request->file('sktl_path'),
-                'sktl_files'
-            );
+        $sktl_path = $data['sktl_path'] ?? null;
+        $data['user_id'] = Auth::id();
+        if ($sktl_path) {
+            $data['sktl_path'] = $sktl_path->store('kegiatan_sktl', 'public');
         }
-
         Kegiatan::create($data);
-
-        return to_route('kegiatan.index')->with('success', 'Kegiatan berhasil dibuat.');
+        return to_route('kegiatan.index')->with('success', 'Kegiatan berhasil dibuat');
     }
 
     /**
-     * Menampilkan detail kegiatan.
+     * Display the specified resource.
      */
-    public function show(Kegiatan $kegiatan): Response
+    public function show(Kegiatan $kegiatan)
     {
-        $kegiatan->load(['proposal', 'tim.users', 'createdBy', 'dokumentasiKegiatans']);
-
+        $kegiatan->load(['proposal', 'tim.users', 'createdBy']);
         return Inertia::render('Kegiatan/Show', [
             'kegiatan' => new KegiatanResource($kegiatan),
         ]);
     }
 
     /**
-     * Menampilkan form untuk mengedit kegiatan.
+     * Show the form for editing the specified resource.
      */
-    public function edit(Kegiatan $kegiatan): Response
+    public function edit(Kegiatan $kegiatan)
     {
-        // (DIPERBAIKI) Memanggil helper untuk menghindari duplikasi kode
-        return Inertia::render('Kegiatan/Edit', array_merge(
-            ['kegiatan' => new KegiatanResource($kegiatan)],
-            $this->getFormData()
-        ));
+        $proposals = Proposal::query()->orderBy('nama_proposal', 'asc')->get();
+        $tims = Tim::query()->orderBy('nama_tim', 'asc')->get();
+        return Inertia::render('Kegiatan/Edit', [
+            'kegiatan' => new KegiatanResource($kegiatan),
+            'proposals' => ProposalResource::collection($proposals),
+            'tims' => TimResource::collection($tims),
+        ]);
     }
 
     /**
-     * Memperbarui kegiatan yang ada.
+     * Update the specified resource in storage.
      */
     public function update(UpdateKegiatanRequest $request, Kegiatan $kegiatan)
     {
         $data = $request->validated();
-
-        if ($request->hasFile('sktl_path')) {
-            $data['sktl_path'] = $this->handleFileUpload(
-                $request->file('sktl_path'),
-                'sktl_files',
-                $kegiatan->sktl_path // (BARU) Mengirim path file lama untuk dihapus
-            );
+        $sktl_path = $data['sktl_path'] ?? null;
+        if ($sktl_path) {
+            if ($kegiatan->sktl_path) {
+                Storage::disk('public')->delete($kegiatan->sktl_path);
+            }
+            $data['sktl_path'] = $sktl_path->store('kegiatan_sktl', 'public');
         }
-
         $kegiatan->update($data);
-
-        return to_route('kegiatan.index')->with('success', "Kegiatan \"{$kegiatan->nama_kegiatan}\" berhasil diubah.");
+        return to_route('kegiatan.index')->with('success', "Kegiatan \"$kegiatan->nama_kegiatan\" berhasil diperbarui");
     }
 
     /**
-     * Menghapus kegiatan.
+     * Remove the specified resource from storage.
      */
     public function destroy(Kegiatan $kegiatan)
     {
-        $name = $kegiatan->nama_kegiatan;
-
+        $nama_kegiatan = $kegiatan->nama_kegiatan;
+        $kegiatan->delete();
         if ($kegiatan->sktl_path) {
             Storage::disk('public')->delete($kegiatan->sktl_path);
         }
-        $kegiatan->delete();
-
-        return to_route('kegiatan.index')->with('success', "Kegiatan \"{$name}\" berhasil dihapus.");
+        return to_route('kegiatan.index')->with('success', "Kegiatan \"$nama_kegiatan\" berhasil dihapus");
     }
 
     /**
-     * Menampilkan daftar kegiatan untuk Pegawai.
-     */
-    public function myIndex(): Response
-    {
-        $user = Auth::user();
-        $kegiatans = Kegiatan::query()
-            ->whereHas('tim.users', fn ($q) => $q->where('users.id', $user->id))
-            ->with([
-                'proposal',
-                'dokumentasiKegiatans.fotos',
-                'dokumentasiKegiatans.kebutuhans',
-                'dokumentasiKegiatans.kontraks',
-                'beritaAcaras'
-            ])->latest()->get();
-
-        return Inertia::render('Kegiatan/MyIndex', [
-            'kegiatans' => KegiatanResource::collection($kegiatans),
-        ]);
-    }
-
-    /**
-     * Memperbarui tahapan kegiatan oleh Pegawai.
+     * Update the stage of the specified resource.
      */
     public function updateTahapan(Request $request, Kegiatan $kegiatan)
     {
-        $validated = $request->validate([
-            'tahapan' => 'required|string', // Validasi Enum dilakukan di bawah
+        $request->validate([
+            'tahapan' => ['required', new Enum(TahapanKegiatan::class)]
         ]);
-
-        $nextTahapan = TahapanKegiatan::tryFrom($validated['tahapan']);
-
-        if (!$nextTahapan) {
-            return back()->with('error', 'Tahapan tidak valid.');
-        }
-
-        // (DIPERBAIKI) Logika transisi state yang lebih jelas dan aman
-        if ($kegiatan->tahapan === TahapanKegiatan::DOKUMENTASI_OBSERVASI && $nextTahapan === TahapanKegiatan::DOKUMENTASI_PENYERAHAN) {
-            $kegiatan->tahapan = TahapanKegiatan::MENUNGGU_PENYERAHAN;
+        $tahapanBaru = TahapanKegiatan::from($request->input('tahapan'));
+        
+        // --- PERBAIKAN: Menggunakan ->value untuk perbandingan yang lebih eksplisit ---
+        // Ini untuk menghindari error yang mungkin muncul pada linter di beberapa editor.
+        if ($kegiatan->tahapan->value === 'selesai' && $tahapanBaru->value === 'arsip') {
+             $kegiatan->update(['tahapan' => $tahapanBaru]);
+             $message = 'Kegiatan telah berhasil diarsipkan.';
         } else {
-            $kegiatan->tahapan = $nextTahapan;
+             $kegiatan->update(['tahapan' => $tahapanBaru]);
+             $message = 'Tahapan kegiatan berhasil diperbarui.';
         }
 
-        $kegiatan->save();
-
-        return back()->with('success', 'Status kegiatan berhasil diperbarui.');
+        return back()->with('success', $message);
     }
 
     /**
-     * Menampilkan detail rangkuman untuk Pegawai.
+     * Display a full detailed view of the specified resource.
      */
-    public function detail(Kegiatan $kegiatan): Response
+    public function fullDetail(Kegiatan $kegiatan)
     {
-        $kegiatan->load(['dokumentasiKegiatans.fotos', 'dokumentasiKegiatans.kebutuhans']);
+        // Eager load semua relasi yang dibutuhkan untuk halaman detail lengkap
+        $kegiatan->load([
+            'proposal', 
+            'tim.users', 
+            'createdBy',
+            'beritaAcaras',
+            'dokumentasiKegiatans' => function ($query) {
+                $query->with(['fotos', 'kebutuhans', 'kontraks']);
+            }
+        ]);
 
-        return Inertia::render('Kegiatan/Detail', [
+        return Inertia::render('Kegiatan/FullDetail', [
             'kegiatan' => new KegiatanResource($kegiatan)
         ]);
     }
-
+    
     /**
-     * Menampilkan halaman untuk Kabid memproses kegiatan.
+     * Display a listing of the penyerahan resource.
      */
-    public function indexPenyerahan(): Response
+    public function indexPenyerahan()
     {
-        $kegiatans = Kegiatan::where('tahapan', TahapanKegiatan::MENUNGGU_PENYERAHAN)
-            ->with(['tim', 'proposal'])
-            ->latest()
-            ->get();
-
+        $query = Kegiatan::where('tahapan', TahapanKegiatan::DOKUMENTASI_OBSERVASI);
+        $kegiatans = $query->paginate(10);
         return Inertia::render('Kegiatan/IndexPenyerahan', [
-            'kegiatans' => KegiatanResource::collection($kegiatans),
+            'kegiatans' => KegiatanResource::collection($kegiatans)
         ]);
     }
 
     /**
-     * Menyimpan data penyerahan dari Kabid.
+     * Update the penyerahan fields for the specified resource.
      */
-    public function storePenyerahan(Request $request, Kegiatan $kegiatan)
+    public function updatePenyerahan(Request $request, Kegiatan $kegiatan)
     {
         $data = $request->validate([
             'tanggal_penyerahan' => 'required|date',
-            'sktl_penyerahan_path' => 'required|file|mimes:pdf,jpg,png,doc,docx',
+            'sktl_penyerahan_path' => 'required|file|mimes:pdf,doc,docx|max:2048',
         ]);
-        
-        // (DIPERBAIKI) Menggabungkan semua update ke dalam satu query
-        $updateData = [
-            'tanggal_penyerahan' => $data['tanggal_penyerahan'],
-            'tahapan' => TahapanKegiatan::DOKUMENTASI_PENYERAHAN,
-        ];
 
         if ($request->hasFile('sktl_penyerahan_path')) {
-            $updateData['sktl_penyerahan_path'] = $this->handleFileUpload(
-                $request->file('sktl_penyerahan_path'),
-                'sktl_penyerahan_files',
-                $kegiatan->sktl_penyerahan_path
-            );
+            if ($kegiatan->sktl_penyerahan_path) {
+                Storage::disk('public')->delete($kegiatan->sktl_penyerahan_path);
+            }
+            $data['sktl_penyerahan_path'] = $request->file('sktl_penyerahan_path')->store('penyerahan_sktl', 'public');
         }
-        
-        $kegiatan->update($updateData);
 
-        return to_route('kegiatan.indexPenyerahan')->with('success', 'Kegiatan berhasil diproses untuk penyerahan.');
-    }
+        $kegiatan->update([
+            'tanggal_penyerahan' => $data['tanggal_penyerahan'],
+            'sktl_penyerahan_path' => $data['sktl_penyerahan_path'],
+            'tahapan' => TahapanKegiatan::DOKUMENTASI_PENYERAHAN,
+        ]);
 
-    // --- (BARU) Private Helper Methods untuk mengurangi duplikasi ---
-
-    /**
-     * Mengambil data yang dibutuhkan untuk form create dan edit.
-     */
-    private function getFormData(): array
-    {
-        return [
-            'proposals' => ProposalResource::collection(
-                Proposal::query()->where('status', 'disetujui')->get()
-            ),
-            'tims' => TimResource::collection(
-                Tim::query()->orderBy('nama_tim')->get()
-            ),
-        ];
-    }
-
-    /**
-     * Menangani upload file, termasuk menghapus file lama jika ada.
-     */
-    private function handleFileUpload(UploadedFile $file, string $directory, ?string $oldFilePath = null): string
-    {
-        if ($oldFilePath) {
-            Storage::disk('public')->delete($oldFilePath);
-        }
-        return $file->store($directory, 'public');
+        return to_route('kegiatan.indexPenyerahan')->with('success', 'Data penyerahan berhasil disimpan.');
     }
 }

@@ -51,6 +51,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/kegiatan-saya', [KegiatanController::class, 'myIndex'])->name('kegiatan.myIndex');
     Route::post('/kegiatan/{kegiatan}/update-tahapan', [KegiatanController::class, 'updateTahapan'])->name('kegiatan.updateTahapan');
     Route::get('/kegiatan/{kegiatan}/detail', [KegiatanController::class, 'detail'])->name('kegiatan.detail');
+    Route::get('/kegiatan/{kegiatan}/full-detail', [KegiatanController::class, 'fullDetail'])->name('kegiatan.fullDetail');
 
     // Rute khusus untuk Dokumentasi & File
     Route::get('/dokumentasi-kegiatan/create', [DokumentasiKegiatanController::class, 'createForm'])->name('dokumentasi-kegiatan.create');
