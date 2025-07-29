@@ -3,12 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Enums\TahapanKegiatan;
+use App\Http\Requests\StoreKegiatanRequest;
+use App\Http\Requests\UpdateKegiatanRequest;
 use App\Http\Resources\KegiatanResource;
 use App\Http\Resources\ProposalResource;
 use App\Http\Resources\TimResource;
 use App\Models\Kegiatan;
-use App\Http\Requests\StoreKegiatanRequest;
-use App\Http\Requests\UpdateKegiatanRequest;
 use App\Models\Proposal;
 use App\Models\Tim;
 use Illuminate\Http\Request;
@@ -20,21 +20,24 @@ use Inertia\Inertia;
 class KegiatanController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * Display a listing of the resource for Admin.
      */
     public function index()
     {
+        $this->authorize('viewAny', Kegiatan::class);
+
         $query = Kegiatan::query()->with(['proposal', 'tim', 'createdBy']);
 
-        $sortField = request("sort_field", 'created_at');
-        $sortDirection = request("sort_direction", "desc");
+        if (request('nama_kegiatan')) {
+            $query->where('nama_kegiatan', 'like', '%' . request('nama_kegiatan') . '%');
+        }
 
-        if (request("nama_kegiatan")) {
-            $query->where("nama_kegiatan", "like", "%" . request("nama_kegiatan") . "%");
+        if (request('tahapan')) {
+            $query->where('tahapan', request('tahapan'));
         }
-        if (request("status")) {
-            $query->where("status", request("status"));
-        }
+
+        $sortField = request('sort_field', 'created_at');
+        $sortDirection = request('sort_direction', 'desc');
 
         $kegiatans = $query->orderBy($sortField, $sortDirection)
             ->paginate(10)
@@ -42,27 +45,33 @@ class KegiatanController extends Controller
 
         return Inertia::render('Kegiatan/Index', [
             'kegiatans' => KegiatanResource::collection($kegiatans),
-            'queryParams' => request()->query() ?: null,
+            'queryParams' => request()->query(),
             'success' => session('success'),
         ]);
     }
 
     /**
-     * Display a listing of the resource for the current user.
+     * Display a listing of the resource for the current user (Pegawai).
      */
     public function myIndex()
     {
         $user = Auth::user();
+
         $query = Kegiatan::whereHas('tim.users', function ($query) use ($user) {
             $query->where('users.id', $user->id);
-        })->with(['proposal', 'tim', 'createdBy', 'dokumentasiKegiatans.fotos', 'dokumentasiKegiatans.kebutuhans', 'dokumentasiKegiatans.kontraks', 'beritaAcaras']);
-        
+        })->with([
+            'proposal', 'tim', 'createdBy',
+            'dokumentasiKegiatans.fotos',
+            'dokumentasiKegiatans.kebutuhans',
+            'dokumentasiKegiatans.kontraks',
+            'beritaAcaras',
+        ]);
+
         $kegiatans = $query->orderBy('created_at', 'desc')->get();
 
         return Inertia::render('Kegiatan/MyIndex', [
             'kegiatans' => KegiatanResource::collection($kegiatans),
             'success' => session('success'),
-            'active_tab' => session('active_tab', 'perjalanan_dinas'),
         ]);
     }
 
@@ -71,8 +80,11 @@ class KegiatanController extends Controller
      */
     public function create()
     {
-        $proposals = Proposal::query()->orderBy('nama_proposal', 'asc')->get();
-        $tims = Tim::query()->orderBy('nama_tim', 'asc')->get();
+        $this->authorize('create', Kegiatan::class);
+
+        $proposals = Proposal::where('status', 'disetujui')->orderBy('nama_proposal')->get();
+        $tims = Tim::orderBy('nama_tim')->get();
+
         return Inertia::render('Kegiatan/Create', [
             'proposals' => ProposalResource::collection($proposals),
             'tims' => TimResource::collection($tims),
@@ -84,14 +96,19 @@ class KegiatanController extends Controller
      */
     public function store(StoreKegiatanRequest $request)
     {
+        $this->authorize('create', Kegiatan::class);
+
         $data = $request->validated();
-        $sktl_path = $data['sktl_path'] ?? null;
-        $data['user_id'] = Auth::id();
-        if ($sktl_path) {
-            $data['sktl_path'] = $sktl_path->store('kegiatan_sktl', 'public');
+        $data['created_by'] = Auth::id();
+        $data['tahapan'] = TahapanKegiatan::PERJALANAN_DINAS;
+
+        if ($request->hasFile('sktl_path')) {
+            $data['sktl_path'] = $request->file('sktl_path')->store('kegiatan_sktl', 'public');
         }
-        Kegiatan::create($data);
-        return to_route('kegiatan.index')->with('success', 'Kegiatan berhasil dibuat');
+
+        $kegiatan = Kegiatan::create($data);
+
+        return to_route('dashboard')->with('success', "Kegiatan \"$kegiatan->nama_kegiatan\" berhasil dibuat dan ditugaskan.");
     }
 
     /**
@@ -99,7 +116,16 @@ class KegiatanController extends Controller
      */
     public function show(Kegiatan $kegiatan)
     {
-        $kegiatan->load(['proposal', 'tim.users', 'createdBy']);
+        $this->authorize('view', $kegiatan);
+
+        $kegiatan->load([
+            'proposal',
+            'tim.users',
+            'createdBy',
+            'dokumentasiKegiatans',
+            'beritaAcaras',
+        ]);
+
         return Inertia::render('Kegiatan/Show', [
             'kegiatan' => new KegiatanResource($kegiatan),
         ]);
@@ -110,8 +136,11 @@ class KegiatanController extends Controller
      */
     public function edit(Kegiatan $kegiatan)
     {
-        $proposals = Proposal::query()->orderBy('nama_proposal', 'asc')->get();
-        $tims = Tim::query()->orderBy('nama_tim', 'asc')->get();
+        $this->authorize('update', $kegiatan);
+
+        $proposals = Proposal::orderBy('nama_proposal')->get();
+        $tims = Tim::orderBy('nama_tim')->get();
+
         return Inertia::render('Kegiatan/Edit', [
             'kegiatan' => new KegiatanResource($kegiatan),
             'proposals' => ProposalResource::collection($proposals),
@@ -124,15 +153,19 @@ class KegiatanController extends Controller
      */
     public function update(UpdateKegiatanRequest $request, Kegiatan $kegiatan)
     {
+        $this->authorize('update', $kegiatan);
+
         $data = $request->validated();
-        $sktl_path = $data['sktl_path'] ?? null;
-        if ($sktl_path) {
+
+        if ($request->hasFile('sktl_path')) {
             if ($kegiatan->sktl_path) {
                 Storage::disk('public')->delete($kegiatan->sktl_path);
             }
-            $data['sktl_path'] = $sktl_path->store('kegiatan_sktl', 'public');
+            $data['sktl_path'] = $request->file('sktl_path')->store('kegiatan_sktl', 'public');
         }
+
         $kegiatan->update($data);
+
         return to_route('kegiatan.index')->with('success', "Kegiatan \"$kegiatan->nama_kegiatan\" berhasil diperbarui");
     }
 
@@ -141,75 +174,85 @@ class KegiatanController extends Controller
      */
     public function destroy(Kegiatan $kegiatan)
     {
-        $nama_kegiatan = $kegiatan->nama_kegiatan;
-        $kegiatan->delete();
+        $this->authorize('delete', $kegiatan);
+
+        $nama = $kegiatan->nama_kegiatan;
+
         if ($kegiatan->sktl_path) {
             Storage::disk('public')->delete($kegiatan->sktl_path);
         }
-        return to_route('kegiatan.index')->with('success', "Kegiatan \"$nama_kegiatan\" berhasil dihapus");
+
+        $kegiatan->delete();
+
+        return to_route('kegiatan.index')->with('success', "Kegiatan \"$nama\" berhasil dihapus");
     }
 
     /**
-     * Update the stage of the specified resource.
+     * Update the stage of the specified resource (e.g. to ARSIP).
      */
     public function updateTahapan(Request $request, Kegiatan $kegiatan)
     {
+        $this->authorize('update', $kegiatan);
+
         $request->validate([
-            'tahapan' => ['required', new Enum(TahapanKegiatan::class)]
+            'tahapan' => ['required', new Enum(TahapanKegiatan::class)],
         ]);
+
         $tahapanBaru = TahapanKegiatan::from($request->input('tahapan'));
-        
-        // --- PERBAIKAN: Menggunakan ->value untuk perbandingan yang lebih eksplisit ---
-        // Ini untuk menghindari error yang mungkin muncul pada linter di beberapa editor.
-        if ($kegiatan->tahapan->value === 'selesai' && $tahapanBaru->value === 'arsip') {
-             $kegiatan->update(['tahapan' => $tahapanBaru]);
-             $message = 'Kegiatan telah berhasil diarsipkan.';
-        } else {
-             $kegiatan->update(['tahapan' => $tahapanBaru]);
-             $message = 'Tahapan kegiatan berhasil diperbarui.';
+
+        if ($kegiatan->tahapan === TahapanKegiatan::SELESAI && $tahapanBaru === TahapanKegiatan::ARSIP) {
+            $kegiatan->update(['tahapan' => $tahapanBaru]);
+            return back()->with('success', 'Kegiatan telah berhasil diarsipkan.');
         }
 
-        return back()->with('success', $message);
+        return back()->with('error', 'Aksi tidak diizinkan.');
     }
 
     /**
-     * Display a full detailed view of the specified resource.
+     * Display full detail of kegiatan.
      */
     public function fullDetail(Kegiatan $kegiatan)
     {
-        // Eager load semua relasi yang dibutuhkan untuk halaman detail lengkap
+        $this->authorize('view', $kegiatan);
+
         $kegiatan->load([
-            'proposal', 
-            'tim.users', 
+            'proposal',
+            'tim.users',
             'createdBy',
             'beritaAcaras',
-            'dokumentasiKegiatans' => function ($query) {
-                $query->with(['fotos', 'kebutuhans', 'kontraks']);
-            }
+            'dokumentasiKegiatans.fotos',
+            'dokumentasiKegiatans.kebutuhans',
+            'dokumentasiKegiatans.kontraks',
         ]);
 
         return Inertia::render('Kegiatan/FullDetail', [
-            'kegiatan' => new KegiatanResource($kegiatan)
-        ]);
-    }
-    
-    /**
-     * Display a listing of the penyerahan resource.
-     */
-    public function indexPenyerahan()
-    {
-        $query = Kegiatan::where('tahapan', TahapanKegiatan::DOKUMENTASI_OBSERVASI);
-        $kegiatans = $query->paginate(10);
-        return Inertia::render('Kegiatan/IndexPenyerahan', [
-            'kegiatans' => KegiatanResource::collection($kegiatans)
+            'kegiatan' => new KegiatanResource($kegiatan),
         ]);
     }
 
     /**
-     * Update the penyerahan fields for the specified resource.
+     * Show kegiatan yang siap penyerahan.
+     */
+    public function indexPenyerahan()
+    {
+        $this->authorize('viewAny', Kegiatan::class);
+
+        $kegiatans = Kegiatan::where('tahapan', TahapanKegiatan::DOKUMENTASI_OBSERVASI)
+            ->orderBy('created_at', 'desc')
+            ->paginate(10);
+
+        return Inertia::render('Kegiatan/IndexPenyerahan', [
+            'kegiatans' => KegiatanResource::collection($kegiatans),
+        ]);
+    }
+
+    /**
+     * Update penyerahan SKTL.
      */
     public function updatePenyerahan(Request $request, Kegiatan $kegiatan)
     {
+        $this->authorize('update', $kegiatan);
+
         $data = $request->validate([
             'tanggal_penyerahan' => 'required|date',
             'sktl_penyerahan_path' => 'required|file|mimes:pdf,doc,docx|max:2048',

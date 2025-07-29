@@ -5,126 +5,49 @@ namespace App\Http\Controllers;
 use App\Models\BeritaAcara;
 use App\Http\Requests\StoreBeritaAcaraRequest;
 use App\Http\Requests\UpdateBeritaAcaraRequest;
-use App\Http\Resources\BeritaAcaraResource;
 use App\Models\Kegiatan;
-use Illuminate\Http\Request;
+use App\Enums\TahapanKegiatan;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class BeritaAcaraController extends Controller
 {
     /**
-     * Display a listing of the resource.
-     */
-    public function index()
-    {
-        $query = BeritaAcara::query();
-
-        $sortField = request("sort_field", 'created_at');
-        $sortDirection = request("sort_direction", "desc");
-
-        if (request("nama_berita_acara")) {
-            $query->where("nama_berita_acara", "like", "%" . request("nama_berita_acara") . "%");
-        }
-        
-        $beritaAcaras = $query->orderBy($sortField, $sortDirection)
-            ->paginate(10)
-            ->onEachSide(1);
-
-        return Inertia::render('BeritaAcara/Index', [
-            'berita_acaras' => BeritaAcaraResource::collection($beritaAcaras),
-            'queryParams' => request()->query() ?: null,
-            'success' => session('success'),
-        ]);
-    }
-
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create(Request $request)
-    {
-        // Validasi dan ambil data kegiatan
-        $request->validate(['kegiatan_id' => 'required|exists:kegiatans,id']);
-        $kegiatan = Kegiatan::findOrFail($request->query('kegiatan_id'));
-
-        return Inertia::render('BeritaAcara/Create', [
-            'kegiatan' => $kegiatan,
-        ]);
-    }
-
-    /**
      * Store a newly created resource in storage.
+     * Aksi untuk Pegawai (Penyelesaian Kegiatan).
      */
-    public function store(StoreBeritaAcaraRequest $request)
+    public function store(StoreBeritaAcaraRequest $request, Kegiatan $kegiatan)
     {
+        $this->authorize('update', $kegiatan); // Memastikan pegawai adalah anggota tim
+
+        // Validasi bahwa kegiatan berada pada tahap yang benar
+        if ($kegiatan->tahapan !== TahapanKegiatan::SELESAI) {
+            return back()->with('error', 'Kegiatan ini belum siap untuk diselesaikan.');
+        }
+
         $data = $request->validated();
-        $file = $data['file_path'] ?? null;
-        $data['user_id'] = Auth::id();
-
-        if ($file) {
-            $data['file_path'] = $file->store('berita_acaras', 'public');
-        }
-
-        BeritaAcara::create($data);
-
-        // Arahkan kembali ke halaman "Kegiatan Saya" dengan tab "Selesai" aktif
-        return to_route('kegiatan.myIndex')
-            ->with('success', 'Berita Acara berhasil diunggah.')
-            ->with('active_tab', 'selesai');
-    }
-
-    /**
-     * Display the specified resource.
-     */
-    public function show(BeritaAcara $beritaAcara)
-    {
-        // Fungsi ini bisa digunakan jika Anda ingin membuat halaman detail untuk Berita Acara
-        return Inertia::render('BeritaAcara/Show', [
-            'berita_acara' => new BeritaAcaraResource($beritaAcara),
+        
+        // Validasi tambahan untuk status akhir
+        $request->validate([
+            'status_akhir' => ['required', Rule::in(['selesai', 'ditunda', 'dibatalkan'])]
         ]);
-    }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(BeritaAcara $beritaAcara)
-    {
-        return Inertia::render('BeritaAcara/Edit', [
-            'berita_acara' => new BeritaAcaraResource($beritaAcara),
+        $berita_acara_path = $data['file_path']->store('berita_acara', 'public');
+
+        $kegiatan->beritaAcaras()->create([
+            'file_path' => $berita_acara_path,
+            'user_id' => Auth::id(),
+            'tanggal_penyelesaian' => now(),
         ]);
-    }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(UpdateBeritaAcaraRequest $request, BeritaAcara $beritaAcara)
-    {
-        $data = $request->validated();
-        $file = $data['file_path'] ?? null;
+        // Update tahapan dan status akhir kegiatan
+        $kegiatan->tahapan = TahapanKegiatan::SELESAI;
+        $kegiatan->status_akhir = $request->input('status_akhir');
+        $kegiatan->save();
 
-        if ($file) {
-            // Hapus file lama jika ada
-            if ($beritaAcara->file_path) {
-                Storage::disk('public')->delete($beritaAcara->file_path);
-            }
-            $data['file_path'] = $file->store('berita_acaras', 'public');
-        }
+        // TODO: Kirim notifikasi ke Kadis dan Kabid bahwa kegiatan telah selesai
 
-        $beritaAcara->update($data);
-
-        return to_route('berita-acara.index')->with('success', 'Berita Acara berhasil diperbarui.');
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(BeritaAcara $beritaAcara)
-    {
-        $beritaAcara->delete();
-        if ($beritaAcara->file_path) {
-            Storage::disk('public')->delete($beritaAcara->file_path);
-        }
-        return to_route('berita-acara.index')->with('success', 'Berita Acara berhasil dihapus.');
+        return to_route('kegiatan.myIndex')->with('success', 'Laporan akhir berhasil diunggah dan kegiatan telah diselesaikan.');
     }
 }

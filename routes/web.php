@@ -1,76 +1,91 @@
 <?php
 
-// Import semua controller yang dibutuhkan
-use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\DokumentasiKegiatanController;
-use App\Http\Controllers\KebutuhanController;
-use App\Http\Controllers\FotoController;
-use App\Http\Controllers\KegiatanController;
-use App\Http\Controllers\ProposalController;
-use App\Http\Controllers\TimController;
-use App\Http\Controllers\UserController;
-use App\Http\Controllers\BeritaAcaraController;
-use App\Http\Controllers\KontrakController;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\UserController;
+use App\Http\Controllers\TimController;
+use App\Http\Controllers\ProposalController;
+use App\Http\Controllers\KegiatanController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\BeritaAcaraController;
+use App\Http\Controllers\DokumentasiKegiatanController;
+use App\Http\Controllers\ArsipController;
+use App\Http\Controllers\VerifikasiProposalController;
+use App\Http\Controllers\ManajemenPenyerahanController;
 
 /*
 |--------------------------------------------------------------------------
 | Web Routes
 |--------------------------------------------------------------------------
 |
-| Di sini Anda mendaftarkan rute web untuk aplikasi Anda. Rute-rute ini
-| dimuat oleh RouteServiceProvider dalam sebuah grup yang berisi
-| middleware "web".
+| Here is where you can register web routes for your application. These
+| routes are loaded by the RouteServiceProvider and all of them will
+| be assigned to the "web" middleware group. Make something great!
 |
 */
 
-Route::redirect('/', '/dashboard');
+Route::get('/', function () {
+    return redirect()->route('login');
+});
 
-Route::middleware(['auth', 'verified'])->group(function () {
-    
-    Route::get('/dashboard', function () {
-        return Inertia::render('Dashboard');
-    })->name('dashboard');
+Route::get('/dashboard', [DashboardController::class, 'index'])
+    ->middleware(['auth', 'verified'])->name('dashboard');
 
-    // --- PROFIL PENGGUNA ---
+Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
-    
-    // --- RUTE KHUSUS (HARUS DI ATAS RESOURCE) ---
 
-    // Rute khusus untuk Proposal
-    Route::get('/proposal-review', [ProposalController::class, 'reviewIndex'])->name('proposal.review');
-    Route::post('/proposal/{proposal}/status', [ProposalController::class, 'updateStatus'])->name('proposal.updateStatus');
+    // --- Rute untuk Semua Peran yang Terotentikasi ---
+    Route::get('/arsip', [ArsipController::class, 'index'])->name('arsip.index');
+    Route::get('/arsip/{kegiatan}', [ArsipController::class, 'show'])->name('arsip.show');
+
+
+    // --- Rute untuk Role: Pengusul ---
+    Route::middleware(['role:pengusul|admin'])->group(function () {
+        Route::get('/proposal/create', [ProposalController::class, 'create'])->name('proposal.create');
+        Route::post('/proposal', [ProposalController::class, 'store'])->name('proposal.store');
+    });
+
+    // --- Rute untuk Role: Kadis ---
+    Route::middleware(['role:kadis|admin'])->group(function () {
+        Route::get('/verifikasi-proposal', [VerifikasiProposalController::class, 'index'])->name('verifikasi.proposal.index');
+        Route::patch('/verifikasi-proposal/{proposal}', [VerifikasiProposalController::class, 'update'])->name('verifikasi.proposal.update');
+    });
+
+    // --- Rute untuk Role: Kabid ---
+    Route::middleware(['role:kabid|admin'])->group(function () {
+        Route::resource('tim', TimController::class);
+        Route::get('/kegiatan/create', [KegiatanController::class, 'create'])->name('kegiatan.create');
+        Route::post('/kegiatan', [KegiatanController::class, 'store'])->name('kegiatan.store');
         
-    // Rute khusus untuk Kegiatan
-    Route::get('/kegiatan/manajemen-penyerahan', [KegiatanController::class, 'indexPenyerahan'])->name('kegiatan.indexPenyerahan');
-    Route::post('/kegiatan/{kegiatan}/store-penyerahan', [KegiatanController::class, 'storePenyerahan'])->name('kegiatan.storePenyerahan');
-    Route::get('/kegiatan-saya', [KegiatanController::class, 'myIndex'])->name('kegiatan.myIndex');
-    Route::post('/kegiatan/{kegiatan}/update-tahapan', [KegiatanController::class, 'updateTahapan'])->name('kegiatan.updateTahapan');
-    Route::get('/kegiatan/{kegiatan}/detail', [KegiatanController::class, 'detail'])->name('kegiatan.detail');
-    Route::get('/kegiatan/{kegiatan}/full-detail', [KegiatanController::class, 'fullDetail'])->name('kegiatan.fullDetail');
+        // Manajemen Penyerahan oleh Kabid
+        Route::get('/manajemen-penyerahan', [ManajemenPenyerahanController::class, 'index'])->name('manajemen.penyerahan.index');
+        Route::patch('/manajemen-penyerahan/{kegiatan}', [ManajemenPenyerahanController::class, 'update'])->name('manajemen.penyerahan.update');
+    });
+    
+    // --- Rute untuk Role: Pegawai ---
+    Route::middleware(['role:pegawai|admin'])->group(function () {
+        Route::get('/kegiatan-saya', [KegiatanController::class, 'myIndex'])->name('kegiatan.myIndex');
+        Route::post('/kegiatan/{kegiatan}/konfirmasi-kehadiran', [DokumentasiKegiatanController::class, 'confirmKehadiran'])->name('kegiatan.confirmKehadiran');
+        
+        // Dokumentasi Observasi
+        Route::post('/dokumentasi-observasi/{kegiatan}', [DokumentasiKegiatanController::class, 'storeObservasi'])->name('dokumentasi.observasi.store');
 
-    // Rute khusus untuk Dokumentasi & File
-    Route::get('/dokumentasi-kegiatan/create', [DokumentasiKegiatanController::class, 'createForm'])->name('dokumentasi-kegiatan.create');
-    Route::post('/dokumentasi-kegiatan', [DokumentasiKegiatanController::class, 'storeForm'])->name('dokumentasi-kegiatan.store');
-    Route::get('/dokumentasi-kegiatan/{dokumentasiKegiatan}', [DokumentasiKegiatanController::class, 'show'])->name('dokumentasi-kegiatan.show');
-    Route::post('/foto', [FotoController::class, 'store'])->name('foto.store');
-    Route::delete('/foto/{foto}', [FotoController::class, 'destroy'])->name('foto.destroy');
+        // Dokumentasi Penyerahan
+        Route::post('/dokumentasi-penyerahan/{kegiatan}', [DokumentasiKegiatanController::class, 'storePenyerahan'])->name('dokumentasi.penyerahan.store');
+
+        // Penyelesaian Kegiatan
+        Route::post('/penyelesaian/{kegiatan}', [BeritaAcaraController::class, 'store'])->name('kegiatan.selesaikan');
+    });
 
 
-    // --- RESOURCE CONTROLLERS (DI BAWAH RUTE KUSTOM) ---
-    Route::resource('user', UserController::class);
-    Route::resource('proposal', ProposalController::class);
-    Route::resource('kegiatan', KegiatanController::class); // <-- Posisi ini sekarang benar
-    Route::resource('tim', TimController::class);
-    Route::resource('kebutuhan', KebutuhanController::class);
-    Route::resource('berita-acara', BeritaAcaraController::class);
-    Route::resource('kontrak', KontrakController::class);
-
+    // --- Rute Admin (CRUD Umum jika diperlukan) ---
+    Route::middleware(['role:admin'])->group(function() {
+        Route::resource('user', UserController::class);
+        Route::resource('proposal', ProposalController::class)->except(['create', 'store']);
+        Route::resource('kegiatan', KegiatanController::class)->except(['create', 'store', 'myIndex']);
+    });
 });
 
-// Memuat rute untuk otentikasi
 require __DIR__.'/auth.php';
