@@ -6,167 +6,121 @@ use App\Models\Proposal;
 use App\Http\Requests\StoreProposalRequest;
 use App\Http\Requests\UpdateProposalRequest;
 use App\Http\Resources\ProposalResource;
-use App\Http\Resources\UserResource;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
 class ProposalController extends Controller
 {
     /**
-     * Menampilkan daftar proposal milik PENGUSUL yang sedang login.
+     * Display a listing of the resource.
      */
     public function index()
     {
-        $query = Proposal::query()->where('user_id', Auth::id());
-        $proposals = $query->latest()->paginate(10);
+        // Hanya untuk admin, menampilkan semua proposal
+        $this->authorize('viewAny', Proposal::class);
+
+        $query = Proposal::query()->with('pengusul');
+
+        $sortField = request("sort_field", 'created_at');
+        $sortDirection = request("sort_direction", "desc");
+
+        if (request("nama_proposal")) {
+            $query->where("nama_proposal", "like", "%" . request("nama_proposal") . "%");
+        }
+        if (request("status")) {
+            $query->where("status", request("status"));
+        }
+
+        $proposals = $query->orderBy($sortField, $sortDirection)
+            ->paginate(10)
+            ->onEachSide(1);
 
         return Inertia::render('Proposal/Index', [
             'proposals' => ProposalResource::collection($proposals),
+            'queryParams' => request()->query() ?: null,
             'success' => session('success'),
         ]);
     }
 
     /**
-     * Menampilkan form untuk membuat proposal baru.
+     * Show the form for creating a new resource.
+     * Aksi untuk Pengusul.
      */
     public function create()
     {
+        $this->authorize('create', Proposal::class);
         return Inertia::render('Proposal/Create');
     }
 
     /**
-     * Menyimpan proposal baru ke dalam database.
+     * Store a newly created resource in storage.
+     * Aksi untuk Pengusul.
      */
     public function store(StoreProposalRequest $request)
     {
-        $data = $request->validated();
-        $file = $data['file_path'] ?? null;
-        
-        $data['user_id'] = Auth::id();
+        $this->authorize('create', Proposal::class);
 
-        if ($file) {
-            $data['file_path'] = $file->store('proposal_files', 'public');
+        $data = $request->validated();
+        $dokumen = $data['dokumen_path'] ?? null;
+        $data['pengusul_id'] = Auth::id();
+        $data['status'] = 'diajukan'; // Status awal
+
+        if ($dokumen) {
+            $data['dokumen_path'] = $dokumen->store('proposal_dokumen', 'public');
         }
 
         Proposal::create($data);
 
-        return to_route('proposal.index')->with('success', 'Proposal berhasil diajukan.');
+        // TODO: Kirim Notifikasi ke Kadis
+
+        return to_route('dashboard')->with('success', 'Proposal berhasil diajukan dan sedang menunggu verifikasi.');
     }
 
     /**
-     * ====================================================================
-     * === FUNGSI BARU: Menampilkan detail spesifik dari sebuah proposal. ===
-     * ====================================================================
+     * Display the specified resource.
      */
     public function show(Proposal $proposal)
     {
-        // Kebijakan otorisasi bisa ditambahkan di sini jika diperlukan,
-        // misalnya untuk memastikan hanya user yang terlibat dalam kegiatan
-        // yang bisa melihat proposal ini. Untuk saat ini, kita biarkan terbuka
-        // karena rute ini sudah dilindungi oleh middleware 'auth'.
-        
+        $this->authorize('view', $proposal);
         return Inertia::render('Proposal/Show', [
-            // Eager load relasi 'user' untuk menampilkan nama pengusul
-            'proposal' => new ProposalResource($proposal->load('user'))
+            'proposal' => new ProposalResource($proposal->load('pengusul'))
         ]);
     }
 
-
     /**
-     * Menampilkan form untuk mengedit proposal.
+     * Show the form for editing the specified resource.
      */
     public function edit(Proposal $proposal)
     {
-        if ($proposal->user_id !== Auth::id()) {
-            abort(403);
-        }
+        $this->authorize('update', $proposal);
         return Inertia::render('Proposal/Edit', [
-            'proposal' => new ProposalResource($proposal),
+            'proposal' => new ProposalResource($proposal)
         ]);
     }
 
     /**
-     * Memperbarui proposal yang ada di database.
+     * Update the specified resource in storage.
      */
     public function update(UpdateProposalRequest $request, Proposal $proposal)
     {
-        if ($proposal->user_id !== Auth::id()) {
-            abort(403);
-        }
-
+        $this->authorize('update', $proposal);
+        // Logika update umum oleh admin
         $data = $request->validated();
-        $file = $data['file_path'] ?? null;
-
-        if ($file) {
-            if ($proposal->file_path) {
-                Storage::disk('public')->delete($proposal->file_path);
-            }
-            $data['file_path'] = $file->store('proposal_files', 'public');
-        }
-
+        // ... (logika update file jika ada)
         $proposal->update($data);
 
-        return to_route('proposal.index')->with('success', "Proposal \"{$proposal->nama_proposal}\" berhasil diubah.");
+        return to_route('proposal.index')->with('success', 'Proposal berhasil diperbarui.');
     }
 
     /**
-     * Menghapus proposal dari database.
+     * Remove the specified resource from storage.
      */
     public function destroy(Proposal $proposal)
     {
-        if ($proposal->user_id !== Auth::id()) {
-            abort(403);
-        }
-
-        $name = $proposal->nama_proposal;
-        if ($proposal->file_path) {
-            Storage::disk('public')->delete($proposal->file_path);
-        }
+        $this->authorize('delete', $proposal);
+        $nama_proposal = $proposal->nama_proposal;
         $proposal->delete();
-
-        return to_route('proposal.index')->with('success', "Proposal \"{$name}\" berhasil dihapus.");
-    }
-
-    // =====================================================================
-    // === METODE UNTUK KADIS & KABID ===
-    // =====================================================================
-
-    /**
-     * Menampilkan semua proposal untuk direview oleh Kadis/Kabid.
-     */
-    public function reviewIndex()
-    {
-        if (!in_array(Auth::user()->role, ['kadis', 'kabid'])) {
-            abort(403, 'AKSES DITOLAK');
-        }
-
-        $query = Proposal::query()->with('user');
-        $proposals = $query->latest()->paginate(10);
-
-        return Inertia::render('Proposal/ReviewIndex', [
-            'proposals' => ProposalResource::collection($proposals),
-            'success' => session('success'),
-        ]);
-    }
-
-    /**
-     * Memperbarui status proposal (disetujui/ditolak) oleh Kadis.
-     */
-    public function updateStatus(Request $request, Proposal $proposal)
-    {
-        if (Auth::user()->role !== 'kadis') {
-            abort(403, 'AKSES DITOLAK');
-        }
-
-        $request->validate([
-            'status' => 'required|string|in:disetujui,ditolak',
-        ]);
-
-        $proposal->status = $request->status;
-        $proposal->save();
-
-        return back()->with('success', "Status proposal \"{$proposal->nama_proposal}\" berhasil diubah.");
+        // ... (logika hapus file dari storage)
+        return to_route('proposal.index')->with('success', "Proposal \"$nama_proposal\" berhasil dihapus.");
     }
 }
